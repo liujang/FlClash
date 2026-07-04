@@ -117,9 +117,6 @@ List<String> createFlutterBuildArgs({
   if (platform == 'android' && !universal) {
     flutterBuildArgs.add('split-per-abi');
   }
-  if (platform == 'macos' && universal) {
-    flutterBuildArgs.add('target-platform=darwin-x64,darwin-arm64');
-  }
   return flutterBuildArgs;
 }
 
@@ -183,9 +180,7 @@ Future<int> _package(
     universal: universal,
   );
   final descriptionArgs = <String>[];
-  if (platform != 'android') {
-    descriptionArgs.addAll(['--description', universal ? 'universal' : arch]);
-  }
+  descriptionArgs.addAll(['--description', universal ? 'universal' : arch]);
 
   final depExit = await _ensureDependencies(platform, arch);
   if (depExit != 0) return depExit;
@@ -206,7 +201,10 @@ Future<int> _package(
       ...descriptionArgs,
     ],
     includeParentEnvironment: true,
-    environment: {if (androidArch != null) 'ANDROID_ARCH': androidArch},
+    environment: {
+      if (androidArch != null) 'ANDROID_ARCH': androidArch,
+      if (platform == 'macos' && universal) 'FLUTTER_APPLE_UNIVERSAL_BINARY': 'true',
+    },
     runInShell: Platform.isWindows,
   );
 
