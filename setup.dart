@@ -185,37 +185,47 @@ Future<int> _package(
   final depExit = await _ensureDependencies(platform, arch);
   if (depExit != 0) return depExit;
 
-  final process = await Process.start(
-    'flutter_distributor',
-    [
-      'package',
-      '--skip-clean',
-      '--platform',
-      platform,
-      '--targets',
-      targets,
-      if (androidArch != null)
-        '--build-target-platform=${_androidFlutterTarget[androidArch]!}',
-      if (flutterBuildArgs.isNotEmpty)
-        '--flutter-build-args=${flutterBuildArgs.join(',')}',
-      ...descriptionArgs,
-    ],
-    includeParentEnvironment: true,
-    environment: {
-      if (androidArch != null) 'ANDROID_ARCH': androidArch,
-      if (platform == 'macos' && universal) 'FLUTTER_APPLE_UNIVERSAL_BINARY': 'true',
-    },
-    runInShell: Platform.isWindows,
-  );
+  try {
+    final process = await Process.start(
+      'dart',
+      [
+        'pub',
+        'global',
+        'run',
+        'flutter_distributor',
+        'package',
+        '--skip-clean',
+        '--platform',
+        platform,
+        '--targets',
+        targets,
+        if (platform == 'android' && androidArch != null)
+          '--build-target-platform=${_androidFlutterTarget[androidArch]!}',
+        if (flutterBuildArgs.isNotEmpty)
+          '--flutter-build-args=${flutterBuildArgs.join(',')}',
+        ...descriptionArgs,
+      ],
+      includeParentEnvironment: true,
+      environment: {
+        if (androidArch != null) 'ANDROID_ARCH': androidArch,
+        if (platform == 'macos' && universal)
+          'FLUTTER_APPLE_UNIVERSAL_BINARY': 'true',
+      },
+      runInShell: Platform.isWindows,
+    );
 
-  process.stdout.listen((data) {
-    stdout.write(utf8.decode(data));
-  });
-  process.stderr.listen((data) {
-    stderr.write(utf8.decode(data));
-  });
-  final exitCode = await process.exitCode;
-  return exitCode;
+    process.stdout.listen((data) {
+      stdout.write(utf8.decode(data));
+    });
+    process.stderr.listen((data) {
+      stderr.write(utf8.decode(data));
+    });
+    final exitCode = await process.exitCode;
+    return exitCode;
+  } catch (e) {
+    stderr.writeln('Error starting flutter_distributor: $e');
+    return 1;
+  }
 }
 
 Future<String?> _buildGoCore(String rootDir) async {
