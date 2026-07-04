@@ -180,31 +180,33 @@ Future<int> _package(
     universal: universal,
   );
   final descriptionArgs = <String>[];
-  descriptionArgs.addAll(['--description', universal ? 'universal' : arch]);
+  if (platform != 'android' || universal) {
+    descriptionArgs.addAll(['--description', universal ? 'universal' : arch]);
+  }
 
   final depExit = await _ensureDependencies(platform, arch);
   if (depExit != 0) return depExit;
 
+  final args = [
+    'package',
+    '--skip-clean',
+    '--platform',
+    platform,
+    '--targets',
+    targets,
+    if (platform == 'android' && androidArch != null)
+      '--build-target-platform=${_androidFlutterTarget[androidArch]!}',
+    if (flutterBuildArgs.isNotEmpty)
+      '--flutter-build-args=${flutterBuildArgs.join(',')}',
+    ...descriptionArgs,
+  ];
+
+  stdout.writeln('exec: flutter_distributor ${args.join(' ')}');
+
   try {
     final process = await Process.start(
-      'dart',
-      [
-        'pub',
-        'global',
-        'run',
-        'flutter_distributor',
-        'package',
-        '--skip-clean',
-        '--platform',
-        platform,
-        '--targets',
-        targets,
-        if (platform == 'android' && androidArch != null)
-          '--build-target-platform=${_androidFlutterTarget[androidArch]!}',
-        if (flutterBuildArgs.isNotEmpty)
-          '--flutter-build-args=${flutterBuildArgs.join(',')}',
-        ...descriptionArgs,
-      ],
+      'flutter_distributor',
+      args,
       includeParentEnvironment: true,
       environment: {
         if (androidArch != null) 'ANDROID_ARCH': androidArch,

@@ -119,6 +119,7 @@ jobs:
         run: |
           flutter --version
           flutter pub get
+          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
 
       - name: Setup
         run: dart setup.dart ${{ matrix.platform }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }} ${{ matrix.universal && '--universal' || '' }} -v
