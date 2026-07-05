@@ -1,13 +1,3 @@
-## v0.8.94
-
-- Support universal architecture builds for Android and macOS
-
-- Update local dependencies to remote Git repositories
-
-- Fix build script syntax errors and type mismatches
-
-- Resolve test package dependency conflicts
-
 ## v0.8.93
 
 - Support custom overwrite

@@ -57,7 +57,6 @@ Future<void> main(List<String> args) async {
   final targets = _getTargets(platform, arch, results['targets']);
   final androidArch = results['arch'] as String?;
   final verbose = results['verbose'] as bool;
-  final universal = results['universal'] as bool;
 
   final exitCode = await _package(
     platform,
@@ -67,7 +66,6 @@ Future<void> main(List<String> args) async {
     arch,
     androidArch: androidArch,
     verbose: verbose,
-    universal: universal,
   );
   exit(exitCode);
 }
@@ -96,25 +94,18 @@ ArgParser createSetupArgParser() {
       abbr: 'v',
       negatable: false,
       help: 'Enable verbose Flutter build output',
-    )
-    ..addFlag(
-      'universal',
-      abbr: 'u',
-      negatable: false,
-      help: 'Build universal architecture version',
     );
 }
 
 List<String> createFlutterBuildArgs({
   required String platform,
   required bool verbose,
-  bool universal = false,
 }) {
   final flutterBuildArgs = <String>[
     if (verbose) 'verbose',
     'dart-define-from-file=env.json',
   ];
-  if (platform == 'android' && !universal) {
+  if (platform == 'android') {
     flutterBuildArgs.add('split-per-abi');
   }
   return flutterBuildArgs;
@@ -144,7 +135,6 @@ Future<int> _package(
   String arch, {
   String? androidArch,
   required bool verbose,
-  bool universal = false,
 }) async {
   final distributorDir = p.join(
     rootDir,
@@ -153,6 +143,33 @@ Future<int> _package(
     'packages',
     'flutter_distributor',
   );
+
+  // Patch flutter_distributor to support fat APKs
+  final apkMakerFile = File(p.join(
+    rootDir,
+    'plugins',
+    'flutter_distributor',
+    'packages',
+    'flutter_app_packager',
+    'lib',
+    'src',
+    'makers',
+    'apk',
+    'app_package_maker_apk.dart',
+  ));
+  if (apkMakerFile.existsSync()) {
+    final content = apkMakerFile.readAsStringSync();
+    if (content.contains('if (splits.length > 2) {')) {
+      stdout.writeln('Patching flutter_distributor to support fat APKs...');
+      apkMakerFile.writeAsStringSync(
+        content.replaceAll(
+          'if (splits.length > 2) {',
+          'if (splits.length > 1) {',
+        ),
+      );
+    }
+  }
+
   final activateResult = await Process.run('dart', [
     'pub',
     'global',
@@ -171,63 +188,49 @@ Future<int> _package(
   final file = File(p.join(rootDir, 'env.json'));
 
   await file.writeAsString(
-    jsonEncode({'APP_ENV': env, 'CORE_SHA256': coreSha256}),
+    jsonEncode({'APP_ENV': env, 'CORE_SHA256': ?coreSha256}),
   );
 
   final flutterBuildArgs = createFlutterBuildArgs(
     platform: platform,
     verbose: verbose,
-    universal: universal,
   );
   final descriptionArgs = <String>[];
-  if (platform != 'android' || universal) {
-    descriptionArgs.addAll(['--description', universal ? 'universal' : arch]);
+  if (platform != 'android') {
+    descriptionArgs.addAll(['--description', arch]);
   }
 
   final depExit = await _ensureDependencies(platform, arch);
   if (depExit != 0) return depExit;
 
-  final args = [
-    'package',
-    '--skip-clean',
-    '--platform',
-    platform,
-    '--targets',
-    targets,
-    if (platform == 'android' && androidArch != null)
-      '--build-target-platform=${_androidFlutterTarget[androidArch]!}',
-    if (flutterBuildArgs.isNotEmpty)
-      '--flutter-build-args=${flutterBuildArgs.join(',')}',
-    ...descriptionArgs,
-  ];
+  final process = await Process.start(
+    'flutter_distributor',
+    [
+      'package',
+      '--skip-clean',
+      '--platform',
+      platform,
+      '--targets',
+      targets,
+      if (androidArch != null)
+        '--build-target-platform=${_androidFlutterTarget[androidArch]!}',
+      if (flutterBuildArgs.isNotEmpty)
+        '--flutter-build-args=${flutterBuildArgs.join(',')}',
+      ...descriptionArgs,
+    ],
+    includeParentEnvironment: true,
+    environment: {'ANDROID_ARCH': ?androidArch},
+    runInShell: Platform.isWindows,
+  );
 
-  stdout.writeln('exec: flutter_distributor ${args.join(' ')}');
-
-  try {
-    final process = await Process.start(
-      'flutter_distributor',
-      args,
-      includeParentEnvironment: true,
-      environment: {
-        if (androidArch != null) 'ANDROID_ARCH': androidArch,
-        if (platform == 'macos' && universal)
-          'FLUTTER_APPLE_UNIVERSAL_BINARY': 'true',
-      },
-      runInShell: Platform.isWindows,
-    );
-
-    process.stdout.listen((data) {
-      stdout.write(utf8.decode(data));
-    });
-    process.stderr.listen((data) {
-      stderr.write(utf8.decode(data));
-    });
-    final exitCode = await process.exitCode;
-    return exitCode;
-  } catch (e) {
-    stderr.writeln('Error starting flutter_distributor: $e');
-    return 1;
-  }
+  process.stdout.listen((data) {
+    stdout.write(utf8.decode(data));
+  });
+  process.stderr.listen((data) {
+    stderr.write(utf8.decode(data));
+  });
+  final exitCode = await process.exitCode;
+  return exitCode;
 }
 
 Future<String?> _buildGoCore(String rootDir) async {

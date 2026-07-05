@@ -41,7 +41,6 @@ jobs:
         include:
           - platform: android
             os: ubuntu-latest
-            universal: true
           - platform: windows
             os: Windows-2022
             arch: amd64
@@ -49,8 +48,11 @@ jobs:
             os: ubuntu-22.04
             arch: amd64
           - platform: macos
+            os: macos-15-intel
+            arch: amd64
+          - platform: macos
             os: macos-latest
-            universal: true
+            arch: arm64
           - platform: windows
             os: windows-11-arm
             arch: arm64
@@ -119,10 +121,9 @@ jobs:
         run: |
           flutter --version
           flutter pub get
-          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
 
       - name: Setup
-        run: dart setup.dart ${{ matrix.platform }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }} ${{ matrix.universal && '--universal' || '' }} -v
+        run: dart setup.dart ${{ matrix.platform }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }} -v
 
       - name: Upload
         uses: actions/upload-artifact@v4
