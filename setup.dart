@@ -57,6 +57,7 @@ Future<void> main(List<String> args) async {
   final targets = _getTargets(platform, arch, results['targets']);
   final androidArch = results['arch'] as String?;
   final verbose = results['verbose'] as bool;
+  final universal = results['universal'] as bool;
 
   final exitCode = await _package(
     platform,
@@ -66,6 +67,7 @@ Future<void> main(List<String> args) async {
     arch,
     androidArch: androidArch,
     verbose: verbose,
+    universal: universal,
   );
   exit(exitCode);
 }
@@ -94,18 +96,25 @@ ArgParser createSetupArgParser() {
       abbr: 'v',
       negatable: false,
       help: 'Enable verbose Flutter build output',
+    )
+    ..addFlag(
+      'universal',
+      abbr: 'u',
+      negatable: false,
+      help: 'Build universal architecture version',
     );
 }
 
 List<String> createFlutterBuildArgs({
   required String platform,
   required bool verbose,
+  bool universal = false,
 }) {
   final flutterBuildArgs = <String>[
     if (verbose) 'verbose',
     'dart-define-from-file=env.json',
   ];
-  if (platform == 'android') {
+  if (platform == 'android' && !universal) {
     flutterBuildArgs.add('split-per-abi');
   }
   return flutterBuildArgs;
@@ -135,6 +144,7 @@ Future<int> _package(
   String arch, {
   String? androidArch,
   required bool verbose,
+  bool universal = false,
 }) async {
   final distributorDir = p.join(
     rootDir,
@@ -188,49 +198,67 @@ Future<int> _package(
   final file = File(p.join(rootDir, 'env.json'));
 
   await file.writeAsString(
-    jsonEncode({'APP_ENV': env, 'CORE_SHA256': ?coreSha256}),
+    jsonEncode({'APP_ENV': env, 'CORE_SHA256': coreSha256}),
   );
 
   final flutterBuildArgs = createFlutterBuildArgs(
     platform: platform,
     verbose: verbose,
+    universal: universal,
   );
   final descriptionArgs = <String>[];
-  if (platform != 'android') {
-    descriptionArgs.addAll(['--description', arch]);
+  if (platform != 'android' || universal) {
+    descriptionArgs.addAll(['--description', universal ? 'universal' : arch]);
   }
 
   final depExit = await _ensureDependencies(platform, arch);
   if (depExit != 0) return depExit;
 
-  final process = await Process.start(
+  final args = [
+    'pub',
+    'global',
+    'run',
     'flutter_distributor',
-    [
-      'package',
-      '--skip-clean',
-      '--platform',
-      platform,
-      '--targets',
-      targets,
-      if (androidArch != null)
-        '--build-target-platform=${_androidFlutterTarget[androidArch]!}',
-      if (flutterBuildArgs.isNotEmpty)
-        '--flutter-build-args=${flutterBuildArgs.join(',')}',
-      ...descriptionArgs,
-    ],
-    includeParentEnvironment: true,
-    environment: {'ANDROID_ARCH': ?androidArch},
-    runInShell: Platform.isWindows,
-  );
+    'package',
+    '--skip-clean',
+    '--platform',
+    platform,
+    '--targets',
+    targets,
+    if (platform == 'android' && androidArch != null)
+      '--build-target-platform=${_androidFlutterTarget[androidArch]!}',
+    if (flutterBuildArgs.isNotEmpty)
+      '--flutter-build-args=${flutterBuildArgs.join(',')}',
+    ...descriptionArgs,
+  ];
 
-  process.stdout.listen((data) {
-    stdout.write(utf8.decode(data));
-  });
-  process.stderr.listen((data) {
-    stderr.write(utf8.decode(data));
-  });
-  final exitCode = await process.exitCode;
-  return exitCode;
+  stdout.writeln('exec: dart ${args.join(' ')}');
+
+  try {
+    final process = await Process.start(
+      'dart',
+      args,
+      includeParentEnvironment: true,
+      environment: {
+        if (androidArch != null) 'ANDROID_ARCH': androidArch,
+        if (platform == 'macos' && universal)
+          'FLUTTER_APPLE_UNIVERSAL_BINARY': 'true',
+      },
+      runInShell: Platform.isWindows,
+    );
+
+    process.stdout.listen((data) {
+      stdout.write(utf8.decode(data));
+    });
+    process.stderr.listen((data) {
+      stderr.write(utf8.decode(data));
+    });
+    final exitCode = await process.exitCode;
+    return exitCode;
+  } catch (e) {
+    stderr.writeln('Error starting flutter_distributor: $e');
+    return 1;
+  }
 }
 
 Future<String?> _buildGoCore(String rootDir) async {
