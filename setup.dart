@@ -149,16 +149,16 @@ Future<int> _package(
   final distributorDir = p.join(
     rootDir,
     'plugins',
-    'flutter_distributor',
+    'flutter_distributor:main',
     'packages',
-    'flutter_distributor',
+    'flutter_distributor:main',
   );
 
   // Patch flutter_distributor to support fat APKs
   final apkMakerFile = File(p.join(
     rootDir,
     'plugins',
-    'flutter_distributor',
+    'flutter_distributor:main',
     'packages',
     'flutter_app_packager',
     'lib',
@@ -214,11 +214,11 @@ Future<int> _package(
   final depExit = await _ensureDependencies(platform, arch);
   if (depExit != 0) return depExit;
 
-  final args = [
+  final distributorArgs = [
     'pub',
     'global',
     'run',
-    'flutter_distributor',
+    'flutter_distributor:main',
     'package',
     '--skip-clean',
     '--platform',
@@ -232,33 +232,28 @@ Future<int> _package(
     ...descriptionArgs,
   ];
 
-  stdout.writeln('exec: dart ${args.join(' ')}');
+  stdout.writeln('exec: dart ${distributorArgs.join(' ')}');
 
-  try {
-    final process = await Process.start(
-      'dart',
-      args,
-      includeParentEnvironment: true,
-      environment: {
-        if (androidArch != null) 'ANDROID_ARCH': androidArch,
-        if (platform == 'macos' && universal)
-          'FLUTTER_APPLE_UNIVERSAL_BINARY': 'true',
-      },
-      runInShell: Platform.isWindows,
-    );
+  final process = await Process.start(
+    'dart',
+    distributorArgs,
+    includeParentEnvironment: true,
+    environment: {
+      if (androidArch != null) 'ANDROID_ARCH': androidArch,
+      if (platform == 'macos' && universal)
+        'FLUTTER_APPLE_UNIVERSAL_BINARY': 'true',
+    },
+    runInShell: Platform.isWindows,
+  );
 
-    process.stdout.listen((data) {
-      stdout.write(utf8.decode(data));
-    });
-    process.stderr.listen((data) {
-      stderr.write(utf8.decode(data));
-    });
-    final exitCode = await process.exitCode;
-    return exitCode;
-  } catch (e) {
-    stderr.writeln('Error starting flutter_distributor: $e');
-    return 1;
-  }
+  process.stdout.listen((data) {
+    stdout.write(utf8.decode(data));
+  });
+  process.stderr.listen((data) {
+    stderr.write(utf8.decode(data));
+  });
+  final exitCode = await process.exitCode;
+  return exitCode;
 }
 
 Future<String?> _buildGoCore(String rootDir) async {
